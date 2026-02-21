@@ -275,7 +275,8 @@ class TestPrioritizeDevices(unittest.TestCase):
         dev_a = self._make_device('AAA')
         dev_c = self._make_device('CCC')
         dev_avoided = self._make_device(avoided_serial)
-        result = self.client._prioritize_devices([dev_a, dev_c, dev_avoided], avoid_list=[avoided_serial])
+        # avoided first to ensure partitioning is what produces the correct order, not input order
+        result = self.client._prioritize_devices([dev_avoided, dev_a, dev_c], avoid_list=[avoided_serial])
         self.assertEqual(result, [dev_a, dev_c])
 
 
@@ -286,12 +287,15 @@ class TestPhoneAllocationPreference(TestStfClient):
         return {'serial': serial, 'present': True, 'ready': True,
                 'using': False, 'owner': None, 'status': 3}
 
-    def test_preferred_device_allocated_when_avoid_list_given(self):
+    @patch('random.shuffle')
+    def test_preferred_device_allocated_when_avoid_list_given(self, mock_shuffle):
         preferred = self._available('AAA')
         avoided = self._available('BBB')
-        self.client.get_devices = MagicMock(return_value=[preferred, avoided])
+        # avoided first: without partitioning, avoided would be tried first and the assertion would fail
+        self.client.get_devices = MagicMock(return_value=[avoided, preferred])
         self.client.allocate = MagicMock(return_value=preferred)
 
         self.client.find_and_allocate({}, avoid_list=[avoided['serial']])
 
+        mock_shuffle.assert_called()
         self.client.allocate.assert_called_once_with(preferred, timeout_seconds=900)
