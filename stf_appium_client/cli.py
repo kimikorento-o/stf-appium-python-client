@@ -53,6 +53,8 @@ def main():
                         help='appium logs to console. WARNING: this mix console prints')
     parser.add_argument('--appium-logs', metavar='file', type=str, default='',
                         help='appium logs to file')
+    parser.add_argument('--avoid-devices', metavar='S', type=str, default='',
+                        help='Comma-separated device serials to avoid unless no other device is available')
     parser.add_argument('command', nargs='*',
                         help='Command to be execute during device allocation')
 
@@ -75,9 +77,11 @@ def main():
         print(client.list_devices(requirements=requirement))
         exit(0)
 
+    avoid_list = args.avoid_devices.split(',') if args.avoid_devices else []
     with client.allocation_context(requirements=requirement,
                                    wait_timeout=args.wait_timeout,
-                                   timeout_seconds=args.timeout) as device:
+                                   timeout_seconds=args.timeout,
+                                   avoid_list=avoid_list) as device:
         try:
             with AdbServer(device['remote_adb_url']) as adb:
                 adb.logger.info(f'adb server listening localhost:{adb.port}')

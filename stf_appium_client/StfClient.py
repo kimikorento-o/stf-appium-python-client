@@ -188,9 +188,26 @@ class StfClient(Logger):
         return list(online)
 
 
+    def _prioritize_devices(self, devices: list, avoid_list) -> list:
+        """
+        Partition devices into preferred and avoided, returning preferred first.
+        Falls back to avoided devices if no preferred devices are available.
+
+        :param devices: list of device dicts (pre-shuffled by caller)
+        :param avoid_list: serials to deprioritize
+        :return: candidate list with preferred devices first, avoided as fallback
+        """
+        preferred = [d for d in devices if d.get('serial') not in avoid_list]
+        avoided = [d for d in devices if d.get('serial') in avoid_list]
+        self.logger.info(f'Avoidance logic active. Avoided serials: {list(avoid_list)}')
+        if not preferred:
+            self.logger.info('No preferred devices available, falling back to avoided devices')
+        return preferred if preferred else avoided
+
     def find_and_allocate(self, requirements: dict,
                           timeout_seconds: int = DEFAULT_ALLOCATION_TIMEOUT_SECONDS,
-                          shuffle: bool = True) -> dict:
+                          shuffle: bool = True,
+                          avoid_list=None) -> dict:
         """
         Find device based on requirements and allocate first.
         Note that this method doesn't wait for device to be free.
@@ -198,6 +215,7 @@ class StfClient(Logger):
         :param requirements: dictionary about requirements, e.g. `dict(platform='android')`
         :param timeout_seconds: allocation timeout when idle, see more from allocation api.
         :param shuffle: randomize allocation
+        :param avoid_list: serials to avoid unless no other device is available
         :return: device dictionary
 
         :raises DeviceNotFound: suitable device not found or all devices are allocated already
@@ -208,7 +226,8 @@ class StfClient(Logger):
         if shuffle:
             random.shuffle(suitable_devices)
 
-        self.logger.debug(f'Found {len(suitable_devices)} suitable devices, try to allocate one')
+        candidates = self._prioritize_devices(suitable_devices, avoid_list) if avoid_list else suitable_devices
+        self.logger.debug(f'Found {len(candidates)} candidate devices, try to allocate one')
 
         def try_allocate(device_candidate):
             try:
@@ -218,7 +237,7 @@ class StfClient(Logger):
                 return None
 
         # generate try_allocate tasks for suitable devices
-        tasks = map_(suitable_devices, lambda item: wrap(item, try_allocate))
+        tasks = map_(candidates, lambda item: wrap(item, try_allocate))
         # find first successful allocation
         result = find(tasks, lambda allocFunc: allocFunc())
 
@@ -229,13 +248,15 @@ class StfClient(Logger):
                                requirements: dict,
                                wait_timeout=60,
                                timeout_seconds=DEFAULT_ALLOCATION_TIMEOUT_SECONDS,
-                               shuffle: bool = True):
+                               shuffle: bool = True,
+                               avoid_list=None):
         """
         wait until suitable device is free and allocate it
         :param requirements: dict of requirements for DUT
         :param wait_timeout: wait timeout for suitable free device
         :param timeout_seconds: allocation timeout. See more from allocate -API.
         :param shuffle: allocate suitable device randomly.
+        :param avoid_list: serials to avoid unless no other device is available
         :return: device dictionary
         """
         wait_until = time.time() + wait_timeout
@@ -252,7 +273,8 @@ class StfClient(Logger):
             try:
                 return self.find_and_allocate(requirements=requirements,
                                               timeout_seconds=timeout_seconds,
-                                              shuffle=shuffle)
+                                              shuffle=shuffle,
+                                              avoid_list=avoid_list)
             except DeviceNotFound:
                 # Wait a while
                 self.logger.debug(f'Suitable device not available, '
@@ -267,19 +289,22 @@ class StfClient(Logger):
     def allocation_context(self, requirements: dict,
                            wait_timeout=60,
                            timeout_seconds: int = DEFAULT_ALLOCATION_TIMEOUT_SECONDS,
-                           shuffle: bool = True):
+                           shuffle: bool = True,
+                           avoid_list=None):
         """
         :param requirements:
         :param wait_timeout: how long time we try to allocate suitable device
         :param timeout_seconds: allocation timeout
         :param shuffle: allocate suitable device randomly
+        :param avoid_list: serials to avoid unless no other device is available
         :return:
         """
         self.logger.info(f"Trying to allocate device using requirements: {requirements}")
         device = self.find_wait_and_allocate(requirements=requirements,
                                              wait_timeout=wait_timeout,
                                              timeout_seconds=timeout_seconds,
-                                             shuffle=shuffle)
+                                             shuffle=shuffle,
+                                             avoid_list=avoid_list)
 
         self.logger.info(f'device allocated: {device}')
         adb_adr = self.remote_connect(device)
