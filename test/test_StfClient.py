@@ -241,3 +241,57 @@ class TestStfClient(unittest.TestCase):
             with self.client.allocation_context({"serial": '123'}, wait_timeout=10):
                 pass
         self.assertEqual(str(error.exception), 'Suitable device not found within 10s timeout ({"serial": "123"})')
+
+
+class TestPrioritizeDevices(unittest.TestCase):
+    """Unit tests for avoid-list partitioning logic"""
+
+    @classmethod
+    def setUpClass(cls):
+        logging.disable(logging.CRITICAL)
+
+    @classmethod
+    def tearDownClass(cls):
+        logging.disable(logging.NOTSET)
+
+    def setUp(self):
+        self.client = StfClient('localhost')
+
+    def _make_device(self, serial):
+        return {'serial': serial}
+
+    def test_falls_back_to_avoided_when_no_preferred(self):
+        devices = [self._make_device('AAA'), self._make_device('BBB')]
+        result = self.client._prioritize_devices(devices, avoid_list=[d['serial'] for d in devices])
+        self.assertEqual(result, devices)
+
+    def test_empty_avoid_list_returns_all_devices(self):
+        devices = [self._make_device('AAA'), self._make_device('BBB')]
+        result = self.client._prioritize_devices(devices, avoid_list=[])
+        self.assertEqual(result, devices)
+
+    def test_order_preserved_within_preferred(self):
+        avoided_serial = 'BBB'
+        dev_a = self._make_device('AAA')
+        dev_c = self._make_device('CCC')
+        dev_avoided = self._make_device(avoided_serial)
+        result = self.client._prioritize_devices([dev_a, dev_c, dev_avoided], avoid_list=[avoided_serial])
+        self.assertEqual(result, [dev_a, dev_c])
+
+
+class TestPhoneAllocationPreference(TestStfClient):
+    """Test phone allocation uses avoid-list"""
+
+    def _available(self, serial):
+        return {'serial': serial, 'present': True, 'ready': True,
+                'using': False, 'owner': None, 'status': 3}
+
+    def test_preferred_device_allocated_when_avoid_list_given(self):
+        preferred = self._available('AAA')
+        avoided = self._available('BBB')
+        self.client.get_devices = MagicMock(return_value=[preferred, avoided])
+        self.client.allocate = MagicMock(return_value=preferred)
+
+        self.client.find_and_allocate({}, avoid_list=[avoided['serial']])
+
+        self.client.allocate.assert_called_once_with(preferred, timeout_seconds=900)
