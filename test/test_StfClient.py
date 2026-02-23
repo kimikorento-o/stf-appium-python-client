@@ -261,8 +261,11 @@ class TestPrioritizeDevices(unittest.TestCase):
         return {'serial': serial}
 
     def test_falls_back_to_avoided_when_no_preferred(self):
-        devices = [self._make_device('AAA'), self._make_device('BBB')]
-        result = self.client._prioritize_devices(devices, avoid_list=[d['serial'] for d in devices])
+        serial_a = 'AAA'
+        serial_b = 'BBB'
+        devices = [self._make_device(serial_a), self._make_device(serial_b)]
+        avoid_list = [serial_a, serial_b]
+        result = self.client._prioritize_devices(devices, avoid_list=avoid_list)
         self.assertEqual(result, devices)
 
     def test_empty_avoid_list_returns_all_devices(self):
@@ -272,16 +275,16 @@ class TestPrioritizeDevices(unittest.TestCase):
 
     def test_order_preserved_within_preferred(self):
         avoided_serial = 'BBB'
-        dev_a = self._make_device('AAA')
-        dev_c = self._make_device('CCC')
-        dev_avoided = self._make_device(avoided_serial)
+        device_a = self._make_device('AAA')
+        device_c = self._make_device('CCC')
+        device_avoided = self._make_device(avoided_serial)
         # avoided first to ensure partitioning is what produces the correct order, not input order
-        result = self.client._prioritize_devices([dev_avoided, dev_a, dev_c], avoid_list=[avoided_serial])
-        self.assertEqual(result, [dev_a, dev_c])
+        result = self.client._prioritize_devices([device_avoided, device_a, device_c], avoid_list=[avoided_serial])
+        self.assertEqual(result, [device_a, device_c])
 
 
 class TestPhoneAllocationPreference(TestStfClient):
-    """Test phone allocation uses avoid-list"""
+    """Test find_and_allocate uses avoid-list"""
 
     def _available(self, serial):
         return {'serial': serial, 'present': True, 'ready': True,

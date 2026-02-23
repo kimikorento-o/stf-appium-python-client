@@ -32,15 +32,17 @@ class TestAdbServer:
             with patch.object(sys, 'argv', testargs):
                 main()
 
+    # skip adb check with CI env var
     @patch.dict(os.environ, {'CI': '1'})
     @patch('stf_appium_client.cli.StfClient')
     def test_avoid_devices_forwarded_to_allocation_context(self, mock_stf):
         avoid_devices = ['AAA', 'BBB']
         # Stop execution after allocation_context is called to avoid mocking AdbServer/AppiumServer
-        mock_stf.return_value.allocation_context.side_effect = SystemExit('test_stop')
+        test_stop_message = 'test_stop'
+        mock_stf.return_value.allocation_context.side_effect = SystemExit(test_stop_message)
         with patch.object(sys, 'argv', ["prog", "--token", "123", "--avoid-devices", ",".join(avoid_devices)]):
             with pytest.raises(SystemExit) as cm:
                 main()
-        assert cm.value.code == 'test_stop'
+        assert cm.value.code == test_stop_message
         _, kwargs = mock_stf.return_value.allocation_context.call_args
         assert kwargs.get('avoid_list') == avoid_devices
